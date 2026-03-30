@@ -6,6 +6,7 @@ from copy import deepcopy
 from configuracion import Configuracion
 from funciones import Funciones
 from docx.shared import Pt
+from docx.shared import Cm
 
 
 # =========================
@@ -41,6 +42,13 @@ def escribir_profesionales(doc, df_equipo, equipo, tabla_profesional_base):
 
         tabla = Table(nueva_tabla_xml, doc)
 
+
+        # Mantener anchos fijos de la plantilla
+        tabla.autofit = False
+        tabla.allow_autofit = False
+
+
+                    
         # =========================
         # NOMBRE PROFESIONAL
         # =========================
@@ -82,7 +90,8 @@ def escribir_profesionales(doc, df_equipo, equipo, tabla_profesional_base):
             )
 
         fila_modelo = tabla.rows[header_index + 1]
-
+        anchos = [cell.width for cell in fila_modelo.cells]
+        
         # =========================
         # OBTENER COLUMNAS REALES
         # =========================
@@ -142,6 +151,8 @@ def escribir_profesionales(doc, df_equipo, equipo, tabla_profesional_base):
                 nueva_fila_xml = deepcopy(fila_modelo._tr)
                 tabla._tbl.append(nueva_fila_xml)
                 fila = tabla.rows[-1].cells
+                # Reaplicar ancho original de la plantilla
+
 
             fecha = Funciones.formatear_fecha(
                 r["FECHA SOLICITUD"]
@@ -329,6 +340,13 @@ def main():
                     row.cells[1],
                     texto_semana
                 )
+
+        # =========================
+        # PROFESIONALES
+        # =========================
+        p = doc.add_paragraph()
+        p.paragraph_format.space_before = Pt(0)
+        p.paragraph_format.space_after = Pt(6)
 
         # =========================
         # PROFESIONALES

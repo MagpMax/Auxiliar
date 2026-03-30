@@ -34,7 +34,7 @@ def escribir_profesionales(doc, df_equipo, equipo, tabla_profesional_base):
         print(f"   👤 {nombre}: {len(df_prof)} actividades")
 
         # =========================
-        # CREAR TABLA DEL PROFESIONAL
+        # CREAR TABLA DESDE TEMPLATE
         # =========================
         nueva_tabla_xml = deepcopy(tabla_profesional_base)
         doc._body._element.append(nueva_tabla_xml)
@@ -42,22 +42,23 @@ def escribir_profesionales(doc, df_equipo, equipo, tabla_profesional_base):
         tabla = Table(nueva_tabla_xml, doc)
 
         # =========================
-        # COMPLETAR NOMBRE PROFESIONAL
+        # NOMBRE PROFESIONAL
         # =========================
         for row in tabla.rows:
             if (
                 len(row.cells) > 1 and
                 "profesional" in row.cells[0].text.lower()
             ):
-                row.cells[1].text = nombre
+                Funciones.escribir_celda(row.cells[1], nombre)
                 break
 
         # =========================
-        # UBICAR HEADER DE ACTIVIDADES
+        # UBICAR CABECERA DE ACTIVIDADES
         # =========================
         header_index = None
 
         for i, row in enumerate(tabla.rows):
+
             texto = " ".join(
                 c.text.replace("\n", " ").lower()
                 for c in row.cells
@@ -72,39 +73,79 @@ def escribir_profesionales(doc, df_equipo, equipo, tabla_profesional_base):
             continue
 
         # =========================
-        # LIMPIAR FILAS VACÍAS / EJEMPLO
+        # DEJAR SOLO UNA FILA MODELO
+        # (la inmediatamente posterior al header)
         # =========================
-        while len(tabla.rows) > header_index + 1:
-            tabla._element.remove(tabla.rows[header_index + 1]._element)
+        while len(tabla.rows) > header_index + 2:
+            tabla._element.remove(
+                tabla.rows[header_index + 2]._element
+            )
+
+        fila_modelo = tabla.rows[header_index + 1]
 
         # =========================
-        # NORMALIZAR COLUMNAS
+        # OBTENER COLUMNAS REALES
         # =========================
-        columnas = {
-            c.upper().replace("\n", " ").strip(): c
-            for c in df_prof.columns
-        }
+        def obtener_columna(nombre, df_local):
 
-        def obtener_columna(nombre):
-            for k, v in columnas.items():
-                if nombre in k:
-                    return v
-            return None
+            candidatas = []
 
-        col_estado = Funciones.obtener_columna("ESTADO", df_prof)
-        col_actividad = Funciones.obtener_columna("ACTIVIDAD", df_prof)
-        col_detalle = Funciones.obtener_columna("DETALLE", df_prof)
-        col_tiempo = Funciones.obtener_columna("TIEMPO", df_prof)
+            for c in df_local.columns:
+                c_norm = (
+                    str(c)
+                    .upper()
+                    .replace("\n", " ")
+                    .strip()
+                )
 
-        
+                if nombre in c_norm:
+                    candidatas.append(c)
+
+            # devolver la primera con datos
+            for c in candidatas:
+                serie = (
+                    df_local[c]
+                    .astype(str)
+                    .str.strip()
+                    .replace(
+                        ["", "nan", "None", "---"],
+                        pd.NA
+                    )
+                )
+
+                if serie.notna().any():
+                    return c
+
+            return candidatas[0] if candidatas else None
+
+        col_actividad = obtener_columna(
+            "ACTIVIDAD", df_prof
+        )
+        col_detalle = obtener_columna(
+            "DETALLE", df_prof
+        )
+        col_estado = obtener_columna(
+            "ESTADO", df_prof
+        )
+        col_tiempo = obtener_columna(
+            "TIEMPO", df_prof
+        )
+
         # =========================
-        # INSERTAR ACTIVIDADES
+        # COMPLETAR FILA MODELO + AGREGAR RESTO
         # =========================
-        for _, r in df_prof.iterrows():
+        for idx, (_, r) in enumerate(df_prof.iterrows()):
 
-            fila = tabla.add_row().cells
+            if idx == 0:
+                fila = fila_modelo.cells
+            else:
+                nueva_fila_xml = deepcopy(fila_modelo._tr)
+                tabla._tbl.append(nueva_fila_xml)
+                fila = tabla.rows[-1].cells
 
-            fi = r["FECHA SOLICITUD"]
+            fecha = Funciones.formatear_fecha(
+                r["FECHA SOLICITUD"]
+            )
 
             actividad = (
                 str(r[col_actividad]).strip()
@@ -124,32 +165,35 @@ def escribir_profesionales(doc, df_equipo, equipo, tabla_profesional_base):
                 else "---"
             )
 
-            tiempo = Funciones.normalizar_tiempo(
-                r[col_tiempo] if col_tiempo else None
+            tiempo = (
+                Funciones.normalizar_tiempo(
+                    r[col_tiempo]
+                )
+                if col_tiempo and pd.notnull(r[col_tiempo])
+                else "---"
             )
 
-            if actividad.lower() == "nan":
+            if actividad.lower() in ("nan", ""):
                 actividad = "---"
 
-            if detalle.lower() == "nan":
+            if detalle.lower() in ("nan", ""):
                 detalle = "---"
 
-            if estado.lower() == "nan":
+            if estado.lower() in ("nan", ""):
                 estado = "---"
 
-            if str(tiempo).lower() == "nan":
+            if str(tiempo).lower() in ("nan", ""):
                 tiempo = "---"
 
-            fila[0].text = Funciones.formatear_fecha(fi)
-            fila[1].text = Funciones.formatear_fecha(fi)
-            fila[2].text = actividad
-            fila[3].text = detalle
-            fila[4].text = estado
-            fila[5].text = str(tiempo)
+            Funciones.escribir_celda(fila[0], fecha)
+            Funciones.escribir_celda(fila[1], fecha)
+            Funciones.escribir_celda(fila[2], actividad)
+            Funciones.escribir_celda(fila[3], detalle)
+            Funciones.escribir_celda(fila[4], estado)
+            Funciones.escribir_celda(fila[5], str(tiempo))
 
-        # espacio entre profesionales
+        # Espacio entre profesionales
         doc.add_paragraph()
-
 
 # =========================        
 def generar_word(df_equipo, equipo, titulo):
@@ -176,7 +220,6 @@ def generar_word(df_equipo, equipo, titulo):
 # =========================
 # MAIN
 # =========================
-
 def main():
 
     from copy import deepcopy
@@ -200,15 +243,19 @@ def main():
 
     doc = Document(Configuracion.WORD_TEMPLATE)
 
-    # Guardar las 3 tablas base de la plantilla
+    # =========================
+    # TOMAR LAS 3 TABLAS DEL TEMPLATE
+    # =========================
     cabecera_base = deepcopy(doc.tables[0]._element)
     tabla_profesional_base = deepcopy(doc.tables[1]._element)
     tabla_final_base = deepcopy(doc.tables[2]._element)
 
     body = doc._body._element
 
-    # Eliminar TODO el contenido original del body del documento
-    # Esto evita que queden párrafos vacíos al inicio.
+    # =========================
+    # LIMPIAR DOCUMENTO COMPLETO
+    # para evitar espacio inicial
+    # =========================
     for element in list(body):
         body.remove(element)
 
@@ -219,22 +266,22 @@ def main():
         df_eq = df[df["EQUIPO"] == equipo]
 
         if df_eq.empty:
-            print(f"⚠️ Sin datos para {equipo}")
             continue
 
         titulo = Configuracion.MAP_TITULOS[equipo]
 
-        # Si MAP_TITULOS trae tupla/lista, usar el primer valor
+        # si MAP_TITULOS tiene tupla/lista usar el primero
         titulo_servicio = (
             titulo[0]
-            if isinstance(titulo, (tuple, list))
+            if isinstance(titulo, (list, tuple))
             else titulo
         )
 
-        print(f"📁 Procesando: {titulo_servicio}")
+        print(f"\n📁 Procesando equipo: {titulo_servicio}")
 
-        # Desde el segundo equipo en adelante:
-        # dejar espacio, luego salto de página
+        # =========================
+        # SEPARACIÓN ENTRE EQUIPOS
+        # =========================
         if not primera_seccion:
             doc.add_paragraph()
             doc.add_page_break()
@@ -242,12 +289,12 @@ def main():
         primera_seccion = False
 
         # =========================
-        # TABLA CABECERA
+        # CABECERA
         # =========================
-        nueva_cabecera = deepcopy(cabecera_base)
-        body.append(nueva_cabecera)
+        nueva_cabecera_xml = deepcopy(cabecera_base)
+        body.append(nueva_cabecera_xml)
 
-        tabla_cabecera = Table(nueva_cabecera, doc)
+        tabla_cabecera = Table(nueva_cabecera_xml, doc)
 
         s1, s2 = Funciones.obtener_semanas(
             Configuracion.FECHA_INICIO,
@@ -270,18 +317,21 @@ def main():
                 .lower()
             )
 
-            # SOLO modificar Servicio
+            # NO tocar contrato
             if etiqueta.startswith("servicio"):
-                row.cells[1].text = str(titulo_servicio)
+                Funciones.escribir_celda(
+                    row.cells[1],
+                    str(titulo_servicio)
+                )
 
-            # SOLO modificar Semana
             elif etiqueta.startswith("semana"):
-                row.cells[1].text = texto_semana
-
-            # Contrato y Administrador quedan intactos desde template
+                Funciones.escribir_celda(
+                    row.cells[1],
+                    texto_semana
+                )
 
         # =========================
-        # TABLAS POR PROFESIONAL
+        # PROFESIONALES
         # =========================
         escribir_profesionales(
             doc,
@@ -291,12 +341,12 @@ def main():
         )
 
         # =========================
-        # TABLA FINAL HITOS
+        # TABLA FINAL DE HITOS
         # =========================
-        nueva_tabla_final = deepcopy(tabla_final_base)
-        body.append(nueva_tabla_final)
+        nueva_tabla_final_xml = deepcopy(tabla_final_base)
+        body.append(nueva_tabla_final_xml)
 
-        # Espacio visual DESPUÉS de la tabla de hitos
+        # espacio visual después de hitos
         doc.add_paragraph()
 
     s1, s2 = Funciones.obtener_semanas(
@@ -315,7 +365,7 @@ def main():
 
     doc.save(ruta)
 
-    print(f"✅ Documento generado: {ruta}")
+    print(f"\n✅ Documento generado: {ruta}")
       
 if __name__ == "__main__":
     main()

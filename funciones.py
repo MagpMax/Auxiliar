@@ -136,6 +136,26 @@ class Funciones:
 
         return pd.concat(dataframes, ignore_index=True)
     
+    @staticmethod 
+    def escribir_celda(cell, texto):
+        """
+        Reemplaza el texto manteniendo formato original de la celda.
+        """
+        texto = "" if texto is None else str(texto)
+
+        p = cell.paragraphs[0]
+
+        # si la celda ya tiene runs, reutilizar el primero
+        if p.runs:
+            run = p.runs[0]
+            run.text = texto
+
+            # eliminar runs extra para que no quede texto residual
+            while len(p.runs) > 1:
+                p._element.remove(p.runs[-1]._element)
+        else:
+            p.add_run(texto)
+    
     
     @staticmethod
     def obtener_columna(nombre, df_prof):
